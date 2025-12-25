@@ -3,6 +3,7 @@ pub mod protocol;
 pub mod server;
 pub mod tun;
 pub mod client;
+pub mod network;
 
 pub use crypto::LegacyKeyPair as KeyPair;
 
@@ -24,3 +25,5 @@ pub type Result<T> = std::result::Result<T, KScopeError>;
 
 // Реэкспорт для удобства
 pub use client::KScopeClient;
+pub use network::{PacketHandler, EchoHandler};  // Добавляем
+pub use network::udp::UdpTransport;             // Добавляем
