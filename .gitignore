@@ -1,0 +1,19 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock  # Обычно добавляется, но можно оставить для бинарных приложений
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Конфиги (если нужно игнорировать)
+config/*.toml  # если это примеры
+!config/client.toml.example
+!config/server.toml.example

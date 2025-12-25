@@ -1,0 +1,47 @@
+[package]
+name = "kscope"
+version = "0.1.0"
+edition = "2021"
+authors = ["KVA <kva@example.com>"]
+description = "Kaleidoscope VPN Protocol Core"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+tokio = { version = "1.37", features = ["full", "signal", "rt-multi-thread"] }
+bytes = "1.5"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+clap = { version = "4.4", features = ["derive"] }
+tun-tap = "0.1"
+env_logger = "0.11"
+rand = "0.8"
+
+# Криптография
+x25519-dalek = { version = "2.0", features = ["static_secrets", "serde"] }
+ed25519-dalek = { version = "2.1", features = ["serde"] }
+chacha20poly1305 = "0.10"
+blake3 = "1.5"
+rand_core = { version = "0.6", features = ["std"] }
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+subtle = "2.5"
+hex = "0.4"
+base64 = "0.21"
+
+[dev-dependencies]
+
+[[bin]]
+name = "kscope-server"
+path = "server/src/main.rs"
+
+[[bin]]
+name = "kscope-client"
+path = "client/src/main.rs"
+
+[[example]]
+name = "test_tun"
+
+[[example]]
+name = "echo_server"

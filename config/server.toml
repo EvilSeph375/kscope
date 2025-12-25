@@ -1,0 +1,57 @@
+# Server Configuration
+[server]
+# Address to listen on
+listen_addr = "0.0.0.0:51820"
+# Path to server private key
+private_key = "/etc/kscope/server.key"
+# Path to server public key (optional, can be derived from private)
+public_key = "/etc/kscope/server.pub"
+# Maximum number of concurrent connections
+max_connections = 1024
+# Session timeout in seconds
+session_timeout = 3600
+# Keep-alive interval in seconds
+keepalive_interval = 25
+# Keep-alive timeout in seconds
+keepalive_timeout = 90
+
+# Network Configuration
+[network]
+# TUN interface name
+tun_name = "kscope0"
+# TUN interface IP address and subnet
+tun_ip = "10.0.0.1/24"
+# Maximum Transmission Unit
+mtu = 1420
+# Enable IP forwarding
+ip_forwarding = true
+# DNS servers to push to clients
+dns_servers = ["1.1.1.1", "8.8.8.8"]
+# Allowed IPs for clients (CIDR notation)
+allowed_ips = ["0.0.0.0/0", "::/0"]
+
+# Logging Configuration
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+# Log file path (optional, stdout if not set)
+file = "/var/log/kscoped.log"
+# Enable JSON logging format
+json_format = false
+
+# Advanced Settings
+[advanced]
+# Congestion control algorithm: "bbr", "cubic", "reno"
+congestion_control = "bbr"
+# Initial congestion window in packets
+init_cwnd = 10
+# Maximum packet size (including headers)
+max_packet_size = 1500
+# Enable packet buffering
+enable_buffering = true
+# Buffer size in packets
+buffer_size = 1024
+# Enable PMTUD (Path MTU Discovery)
+enable_pmtud = true
+# Enable Obfuscation (for future versions)
+enable_obfuscation = false

@@ -1,0 +1,59 @@
+# Client Configuration
+[client]
+# Server address (hostname:port or IP:port)
+server_addr = "vpn.example.com:51820"
+# Path to client private key
+private_key = "~/.config/kscope/client.key"
+# Path to server public key
+server_public_key = "~/.config/kscope/server.pub"
+# Client identifier (optional)
+client_id = ""
+# Connection timeout in seconds
+connection_timeout = 30
+# Enable auto-reconnect
+auto_reconnect = true
+# Reconnect delay in seconds
+reconnect_delay = 5
+# Maximum reconnect attempts
+max_reconnect_attempts = 10
+
+# Network Configuration
+[network]
+# TUN interface name
+tun_name = "kscope0"
+# TUN interface IP address and subnet
+tun_ip = "10.0.0.2/24"
+# Maximum Transmission Unit
+mtu = 1420
+# DNS servers to use (overrides server-provided)
+dns_servers = []
+# Routes to add (CIDR notation)
+routes = ["0.0.0.0/0"]
+
+# Logging Configuration
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+# Log file path (optional, stdout if not set)
+file = "~/.local/share/kscope/client.log"
+# Enable JSON logging format
+json_format = false
+
+# Advanced Settings
+[advanced]
+# Congestion control algorithm: "bbr", "cubic", "reno"
+congestion_control = "bbr"
+# Enable compression (for future versions)
+enable_compression = false
+# Compression level (1-9)
+compression_level = 6
+# Enable packet buffering
+enable_buffering = true
+# Buffer size in packets
+buffer_size = 512
+# Enable PMTUD (Path MTU Discovery)
+enable_pmtud = true
+# Enable Obfuscation (for future versions)
+enable_obfuscation = false
+# Obfuscation mode: "none", "tls", "quic", "websocket"
+obfuscation_mode = "none"
