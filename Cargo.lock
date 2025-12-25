@@ -623,6 +623,7 @@ dependencies = [
  "ed25519-dalek",
  "env_logger",
  "hex",
+ "libc",
  "log",
  "rand",
  "rand_core",
