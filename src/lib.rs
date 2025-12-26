@@ -1,29 +1,25 @@
 pub mod crypto;
 pub mod protocol;
-pub mod server;
-pub mod tun;
-pub mod client;
-pub mod network;
 
-pub use crypto::LegacyKeyPair as KeyPair;
+use std::fmt;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(Debug)]
 pub enum KScopeError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Crypto error: {0}")]
-    Crypto(#[from] crate::crypto::CryptoError),  // Добавляем #[from]
-    #[error("Protocol error: {0}")]
     Protocol(String),
-    #[error("Configuration error: {0}")]
-    Config(String),
-    #[error("Task error: {0}")]
-    Task(#[from] tokio::task::JoinError),
+    Crypto(String),
+    Io(String),
 }
 
-pub type Result<T> = std::result::Result<T, KScopeError>;
+impl fmt::Display for KScopeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KScopeError::Protocol(s) => write!(f, "Protocol error: {}", s),
+            KScopeError::Crypto(s) => write!(f, "Crypto error: {}", s),
+            KScopeError::Io(s) => write!(f, "IO error: {}", s),
+        }
+    }
+}
 
-// Реэкспорт для удобства
-pub use client::KScopeClient;
-pub use network::{PacketHandler, EchoHandler};  // Добавляем
-pub use network::udp::UdpTransport;             // Добавляем
+impl std::error::Error for KScopeError {}
+
+pub type Result<T> = std::result::Result<T, KScopeError>;
