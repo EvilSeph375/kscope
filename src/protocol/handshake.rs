@@ -17,13 +17,15 @@ impl Handshake {
     }
 
     pub fn new_responder(
-        static_private: &[u8],
-        psk: &[u8],
+       static_private: &[u8],
+       remote_static: &[u8],
+       psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            session: NoiseSession::new_responder(static_private, psk)?,
-        })
+       Ok(Self {
+           session: NoiseSession::new_responder(static_private, remote_static, psk)?,
+       })
     }
+
 
     pub fn is_complete(&self) -> bool {
         self.session.is_ready()

@@ -1,7 +1,8 @@
 use snow::{Builder, HandshakeState, TransportState};
 use std::error::Error;
 
-const NOISE_PARAMS: &str = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
+const NOISE_PARAMS: &str = "Noise_XXpsk2_25519_ChaChaPoly_BLAKE2s";
+
 
 pub struct NoiseSession {
     handshake: Option<HandshakeState>,
@@ -27,12 +28,14 @@ impl NoiseSession {
 
     pub fn new_responder(
         static_private: &[u8],
+        remote_static: &[u8],
         psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
         let builder = Builder::new(NOISE_PARAMS.parse()?);
 
         let handshake = builder
             .local_private_key(static_private)
+            .remote_public_key(remote_static)
             .psk(2, psk)
             .build_responder()?;
 

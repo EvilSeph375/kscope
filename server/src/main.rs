@@ -15,7 +15,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut buf = [0u8; 2048];
 
     let mut peer = None;
-    let mut handshake = Handshake::new_responder(&server_static, &psk)?;
+    let client_static = [1u8; 32];   // тот же, что и на клиенте
+    let mut handshake = Handshake::new_responder(&server_static, &client_static, &psk)?;
+
 
     // === Proper IKpsk2 handshake loop ===
     while !handshake.is_complete() {
