@@ -1,5 +1,6 @@
 pub mod crypto;
 pub mod protocol;
+pub mod net;   // ← ВОТ ЭТО ОБЯЗАТЕЛЬНО
 
 use std::fmt;
 

@@ -1,5 +1,7 @@
 use kscope::protocol::handshake::Handshake;
 use kscope::protocol::transport::SecureTransport;
+use kscope::net::tun::create_tun;
+
 use std::net::UdpSocket;
 use std::error::Error;
 
@@ -15,11 +17,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut buf = [0u8; 2048];
 
     let mut peer = None;
-    let client_static = [1u8; 32];   // тот же, что и на клиенте
-    let mut handshake = Handshake::new_responder(&server_static, &client_static, &psk)?;
+    let client_static = [1u8; 32];
 
+    let mut handshake = Handshake::new_responder(
+        &server_static,
+        &client_static,
+        &psk
+    )?;
 
-    // === Proper IKpsk2 handshake loop ===
+    // ===== Noise Handshake =====
     while !handshake.is_complete() {
         let (len, p) = socket.recv_from(&mut buf)?;
         peer = Some(p);
@@ -40,16 +46,31 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Secure tunnel established.");
 
-    // === Encrypted transport ===
-    let (recv_len, _) = socket.recv_from(&mut buf)?;
-    let mut out = [0u8; 2048];
-    let len = transport.decrypt_frame(&buf[..recv_len], &mut out)?;
-    println!("Received: {}", String::from_utf8_lossy(&out[..len]));
+    // ===== Create TUN =====
+    let tun = create_tun("kscope0")?;
+    println!("TUN ready.");
 
-    let reply = b"Hello from secure server!";
-    let mut enc = [0u8; 2048];
-    let len = transport.encrypt_frame(reply, &mut enc)?;
-    socket.send_to(&enc[..len], peer)?;
+    let mut tun_buf = [0u8; 1500];
+    let mut net_buf = [0u8; 2048];
 
-    Ok(())
+    // ===== VPN BRIDGE LOOP =====
+    loop {
+        // 1. Read IP from TUN
+        let ip_len = tun.recv(&mut tun_buf)?;
+
+        // 2. Encrypt
+        let enc_len = transport.encrypt_frame(&tun_buf[..ip_len], &mut net_buf)?;
+
+        // 3. Send via UDP
+        socket.send_to(&net_buf[..enc_len], peer)?;
+
+        // 4. Receive from UDP
+        let (recv_len, _) = socket.recv_from(&mut net_buf)?;
+
+        // 5. Decrypt
+        let dec_len = transport.decrypt_frame(&net_buf[..recv_len], &mut tun_buf)?;
+
+        // 6. Write back to TUN
+        tun.send(&tun_buf[..dec_len])?;
+    }
 }
