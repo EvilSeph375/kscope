@@ -2,57 +2,58 @@ use kscope::protocol::handshake::Handshake;
 use kscope::protocol::transport::SecureTransport;
 use kscope::net::tun::create_tun;
 
-use std::net::UdpSocket;
-use std::error::Error;
+use std::net::{UdpSocket, SocketAddr};
+use std::time::Duration;
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let server_addr = "192.168.137.128:9000";
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let server: SocketAddr = "192.168.137.128:9000".parse()?;
 
-    let client_static = [1u8; 32];
-    let server_static = [2u8; 32];
-    let psk = [9u8; 32];
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    socket.set_read_timeout(Some(Duration::from_secs(5)))?;
 
-    // 1. Create TUN first
-    let tun = create_tun("kscope0")?;
+    let mut tun = create_tun("kscope0")?;
     println!("Client TUN created");
 
-    // 2. UDP socket
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    socket.connect(server_addr)?;
+    let static_priv = [1u8; 32];
+    let static_pub  = [2u8; 32];
+    let psk         = [9u8; 32];
 
-    // 3. Handshake
+    let mut hs = Handshake::new_initiator(&static_priv, &static_pub, &psk)?;
+
     println!("Starting handshake...");
-    let mut handshake = Handshake::new_initiator(&client_static, &server_static, &psk)?;
+
     let mut buf = [0u8; 2048];
 
-    while !handshake.is_complete() {
-        let out_len = handshake.next_outbound(&mut buf)?;
-        if out_len > 0 {
-            socket.send(&buf[..out_len])?;
+    loop {
+        let len = hs.next_outbound(&mut buf)?;
+        if len > 0 {
+            socket.send_to(&buf[..len], server)?;
         }
 
-        if handshake.is_complete() { break; }
+        if hs.is_complete() {
+            break;
+        }
 
-        let recv_len = socket.recv(&mut buf)?;
-        handshake.process_inbound(&buf[..recv_len])?;
+        let (n, _) = socket.recv_from(&mut buf)?;
+        hs.process_inbound(&buf[..n])?;
     }
 
-    println!("Handshake complete");
+    println!("Handshake complete.");
 
-    let session = handshake.into_session();
-    let mut transport = SecureTransport::new(session);
+    let mut transport = SecureTransport::new(hs.into_session());
 
-    // 4. VPN bridge
-    let mut tun_buf = [0u8; 1500];
-    let mut net_buf = [0u8; 2048];
+    let mut tun_buf = [0u8; 2000];
+    let mut net_buf = [0u8; 2000];
+    let mut crypt_buf = [0u8; 2000];
 
     loop {
-        let ip_len = tun.recv(&mut tun_buf)?;
-        let enc_len = transport.encrypt_frame(&tun_buf[..ip_len], &mut net_buf)?;
-        socket.send(&net_buf[..enc_len])?;
+        let n = tun.recv(&mut tun_buf)?;
+        let enc = transport.encrypt_frame(&tun_buf[..n], &mut crypt_buf)?;
+        socket.send_to(&crypt_buf[..enc], server)?;
 
-        let recv_len = socket.recv(&mut net_buf)?;
-        let dec_len = transport.decrypt_frame(&net_buf[..recv_len], &mut tun_buf)?;
-        tun.send(&tun_buf[..dec_len])?;
+        let (n, _) = socket.recv_from(&mut net_buf)?;
+        let dec = transport.decrypt_frame(&net_buf[..n], &mut crypt_buf)?;
+        tun.send(&crypt_buf[..dec])?;
     }
 }
+
