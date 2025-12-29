@@ -1,7 +1,8 @@
 # Client Configuration
 [client]
 # Server address (hostname:port or IP:port)
-server_addr = "vpn.example.com:51820"
+#server_addr = "vpn.example.com:51820"
+server_addr = "192.168.38.127:9000"
 # Path to client private key
 private_key = "~/.config/kscope/client.key"
 # Path to server public key

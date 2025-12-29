@@ -3,15 +3,21 @@ use kscope::protocol::transport::SecureTransport;
 use kscope::net::tun::create_tun;
 
 use std::net::{UdpSocket, SocketAddr};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::sync::mpsc;
+use std::fs;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct ServerConfig {
+    listen_addr: String,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let socket = UdpSocket::bind("0.0.0.0:9000")?;
+    let cfg: ServerConfig = toml::from_str(&fs::read_to_string("config/server.toml")?)?;
+
+    let socket = UdpSocket::bind(&cfg.listen_addr)?;
     let tun = create_tun("kscope0")?;
 
-    println!("Server listening on 0.0.0.0:9000");
+    println!("Server listening on {}", cfg.listen_addr);
     println!("Waiting for client handshake...");
 
     let static_priv = [2u8; 32];
@@ -40,42 +46,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Handshake complete with {}", peer);
 
-    let transport = Arc::new(Mutex::new(SecureTransport::new(hs.into_session())));
-    let socket = Arc::new(socket);
+    let mut transport = SecureTransport::new(hs.into_session());
 
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
-
-    // UDP -> TUN
-    {
-        let transport = transport.clone();
-        let socket = socket.clone();
-
-        thread::spawn(move || {
-            let mut net_buf = [0u8; 2000];
-            let mut plain_buf = [0u8; 2000];
-
-            loop {
-                let (n, _) = socket.recv_from(&mut net_buf).unwrap();
-                let dec = transport.lock().unwrap()
-                    .decrypt_frame(&net_buf[..n], &mut plain_buf).unwrap();
-                tx.send(plain_buf[..dec].to_vec()).unwrap();
-            }
-        });
-    }
-
-    // TUN -> UDP (основной поток)
-    let mut tun = tun;
     let mut tun_buf = [0u8; 2000];
+    let mut net_buf = [0u8; 2000];
     let mut crypt_buf = [0u8; 2000];
 
     loop {
-        if let Ok(packet) = rx.try_recv() {
-            tun.send(&packet)?;
-        }
+        let (n, _) = socket.recv_from(&mut net_buf)?;
+        let dec = transport.decrypt_frame(&net_buf[..n], &mut crypt_buf)?;
+        tun.send(&crypt_buf[..dec])?;
 
         let n = tun.recv(&mut tun_buf)?;
-        let enc = transport.lock().unwrap()
-            .encrypt_frame(&tun_buf[..n], &mut crypt_buf)?;
+        let enc = transport.encrypt_frame(&tun_buf[..n], &mut crypt_buf)?;
         socket.send_to(&crypt_buf[..enc], peer)?;
     }
 }
