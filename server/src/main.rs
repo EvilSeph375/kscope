@@ -2,6 +2,7 @@ use kscope::protocol::handshake::Handshake;
 use kscope::net::tun::create_tun;
 use std::net::UdpSocket;
 use std::error::Error;
+use base64::{engine::general_purpose, Engine as _};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let _tun = create_tun("kscope0")?;
@@ -11,26 +12,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Server listening on 0.0.0.0:9000");
     println!("Waiting for client handshake...");
 
-    let static_priv = [2u8; 32];
-    let static_pub  = [1u8; 32];
-    let psk         = [9u8; 32];
+    // ⬇️ ВСТАВИ СВОИ КЛЮЧИ
+    let static_priv = general_purpose::STANDARD.decode("Server_private")?;
+    let client_pub  = general_purpose::STANDARD.decode("CLIENT_PUBLIC_BASE64")?;
+    let psk = [9u8; 32];
 
-    let mut hs = Handshake::new_responder(&static_priv, &static_pub, &psk)?;
+    let mut hs = Handshake::new_responder(&static_priv, &client_pub, &psk)?;
 
     let mut buf = [0u8; 2048];
 
-    // 1️⃣ Получаем msg1 от клиента
+    // msg1 от клиента
     let (n, peer) = socket.recv_from(&mut buf)?;
     hs.process_inbound(&buf[..n])?;
 
-    // 2️⃣ Отправляем msg2
+    // msg2 сервер → клиент
     let len = loop {
         let out = hs.next_outbound(&mut buf)?;
         if out > 0 { break out; }
     };
     socket.send_to(&buf[..len], peer)?;
 
-    // 3️⃣ Получаем msg3
+    // msg3 от клиента
     let (n, _) = socket.recv_from(&mut buf)?;
     hs.process_inbound(&buf[..n])?;
 
