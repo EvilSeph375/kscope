@@ -1,55 +1,38 @@
 use kscope::protocol::handshake::Handshake;
 use kscope::protocol::transport::SecureTransport;
-use kscope::net::tun::create_tun;
+use kscope::tun::device::{TunDevice, TunConfig};
+use std::net::UdpSocket;
+use std::error::Error;
 
-use std::net::{UdpSocket, SocketAddr};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let socket = UdpSocket::bind("0.0.0.0:9000")?;
-    let mut tun = create_tun("kscope0")?;
 
     println!("Server listening on 0.0.0.0:9000");
     println!("Waiting for client handshake...");
 
-    let static_priv = [2u8; 32];
-    let static_pub  = [1u8; 32];
-    let psk         = [9u8; 32];
+    let static_private = [2u8; 32];
+    let remote_static  = [1u8; 32];
+    let psk = [3u8; 32];
 
-    let mut hs = Handshake::new_responder(&static_priv, &static_pub, &psk)?;
+    let mut buf = [0u8; 1024];
+    let (n, peer) = socket.recv_from(&mut buf)?;
 
-    let mut buf = [0u8; 2048];
-    let peer: SocketAddr;
+    let mut hs = Handshake::new_responder(&static_private, &remote_static, &psk)?;
+    hs.process_inbound(&buf[..n])?;
 
-    loop {
-        let (n, addr) = socket.recv_from(&mut buf)?;
-        hs.process_inbound(&buf[..n])?;
+    let mut out = [0u8; 1024];
+    let n = hs.next_outbound(&mut out)?;
+    socket.send_to(&out[..n], peer)?;
 
-        let len = hs.next_outbound(&mut buf)?;
-        if len > 0 {
-            socket.send_to(&buf[..len], addr)?;
-        }
+    let noise = hs.into_session();
+    let mut transport = SecureTransport::new(noise);
 
-        if hs.is_complete() {
-            peer = addr;
-            break;
-        }
-    }
+    println!("Handshake completed with {}", peer);
 
-    println!("Handshake complete with {}", peer);
-
-    let mut transport = SecureTransport::new(hs.into_session());
-
-    let mut tun_buf = [0u8; 2000];
-    let mut net_buf = [0u8; 2000];
-    let mut crypt_buf = [0u8; 2000];
+    let tun = TunDevice::create(TunConfig::default())?;
+    println!("VPN is up");
 
     loop {
-        let (n, _) = socket.recv_from(&mut net_buf)?;
-        let dec = transport.decrypt_frame(&net_buf[..n], &mut crypt_buf)?;
-        tun.send(&crypt_buf[..dec])?;
-
-        let n = tun.recv(&mut tun_buf)?;
-        let enc = transport.encrypt_frame(&tun_buf[..n], &mut crypt_buf)?;
-        socket.send_to(&crypt_buf[..enc], peer)?;
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
