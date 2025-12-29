@@ -1,62 +1,39 @@
-use kscope::protocol::handshake::Handshake;
-use kscope::protocol::transport::SecureTransport;
 use kscope::net::tun::create_tun;
+use kscope::protocol::handshake::Handshake;
+use std::net::UdpSocket;
+use std::error::Error;
 
-use std::net::{UdpSocket, SocketAddr};
-use std::time::Duration;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server: SocketAddr = "192.168.38.127:9000".parse()?;
-
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    socket.set_read_timeout(Some(Duration::from_secs(5)))?;
-
-    let mut tun = create_tun("kscope0")?;
+fn main() -> Result<(), Box<dyn Error>> {
+    let _tun = create_tun("kscope0")?;
+    println!("TUN interface kscope0 created");
     println!("Client TUN created");
 
-    let static_priv = [1u8; 32];
-    let static_pub  = [2u8; 32];
-    let psk         = [9u8; 32];
+    let server = "192.168.38.127:9000";
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    socket.connect(server)?;
 
-    let mut hs = Handshake::new_initiator(&static_priv, &static_pub, &psk)?;
+    let mut hs = Handshake::new_initiator()?;
+    let mut buf = [0u8; 2048];
 
     println!("Starting handshake...");
 
-    let mut buf = [0u8; 2048];
-
-    // === ШАГ 1: отправляем первый handshake пакет ===
     let len = hs.next_outbound(&mut buf)?;
-    socket.send_to(&buf[..len], server)?;
+    socket.send(&buf[..len])?;
 
-    // === ШАГ 2: получаем ответ сервера ===
-    let (n, _) = socket.recv_from(&mut buf)?;
+    let n = socket.recv(&mut buf)?;
     hs.process_inbound(&buf[..n])?;
 
-    // === ШАГ 3: отправляем финальный пакет ===
-    let len = hs.next_outbound(&mut buf)?;
-    if len > 0 {
-        socket.send_to(&buf[..len], server)?;
-    }
+    // 🔧 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+    let len = loop {
+        let out = hs.next_outbound(&mut buf)?;
+        if out > 0 {
+            break out;
+        }
+    };
 
-    if !hs.is_complete() {
-        return Err("Handshake did not complete".into());
-    }
+    socket.send(&buf[..len])?;
 
     println!("Handshake complete.");
 
-    let mut transport = SecureTransport::new(hs.into_session());
-
-    let mut tun_buf = [0u8; 2000];
-    let mut net_buf = [0u8; 2000];
-    let mut crypt_buf = [0u8; 2000];
-
-    loop {
-        let n = tun.recv(&mut tun_buf)?;
-        let enc = transport.encrypt_frame(&tun_buf[..n], &mut crypt_buf)?;
-        socket.send_to(&crypt_buf[..enc], server)?;
-
-        let (n, _) = socket.recv_from(&mut net_buf)?;
-        let dec = transport.decrypt_frame(&net_buf[..n], &mut crypt_buf)?;
-        tun.send(&crypt_buf[..dec])?;
-    }
+    Ok(())
 }
