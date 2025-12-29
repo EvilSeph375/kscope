@@ -1,10 +1,21 @@
 use crate::crypto::noise::NoiseSession;
 use std::error::Error;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HsState {
+    Init,
+    Sent1,
+    Received1,
+    Sent2,
+    Received2,
+    Sent3,
+    Complete,
+}
+
 pub struct Handshake {
     session: NoiseSession,
     is_initiator: bool,
-    step: u8,
+    state: HsState,
 }
 
 impl Handshake {
@@ -16,7 +27,7 @@ impl Handshake {
         Ok(Self {
             session: NoiseSession::new_initiator(static_private, remote_static, psk)?,
             is_initiator: true,
-            step: 0,
+            state: HsState::Init,
         })
     }
 
@@ -28,40 +39,53 @@ impl Handshake {
         Ok(Self {
             session: NoiseSession::new_responder(static_private, remote_static, psk)?,
             is_initiator: false,
-            step: 0,
+            state: HsState::Init,
         })
     }
 
     pub fn is_complete(&self) -> bool {
-        self.session.is_ready()
+        self.state == HsState::Complete
     }
 
     pub fn next_outbound(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        if self.is_complete() {
-            return Ok(0);
-        }
+        match (self.is_initiator, self.state) {
+            // Client -> msg1
+            (true, HsState::Init) => {
+                let n = self.session.write_handshake(out)?;
+                self.state = HsState::Sent1;
+                Ok(n)
+            }
 
-        // Client sends first and third
-        if self.is_initiator && (self.step == 0 || self.step == 2) {
-            let n = self.session.write_handshake(out)?;
-            self.step += 1;
-            return Ok(n);
-        }
+            // Server -> msg2
+            (false, HsState::Received1) => {
+                let n = self.session.write_handshake(out)?;
+                self.state = HsState::Sent2;
+                Ok(n)
+            }
 
-        // Server sends second
-        if !self.is_initiator && self.step == 1 {
-            let n = self.session.write_handshake(out)?;
-            self.step += 1;
-            return Ok(n);
-        }
+            // Client -> msg3
+            (true, HsState::Received2) => {
+                let n = self.session.write_handshake(out)?;
+                self.state = HsState::Sent3;
+                Ok(n)
+            }
 
-        Ok(0)
+            _ => Ok(0),
+        }
     }
 
     pub fn process_inbound(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
         let mut tmp = [0u8; 1024];
         self.session.read_handshake(input, &mut tmp)?;
-        self.step += 1;
+
+        self.state = match (self.is_initiator, self.state) {
+            (false, HsState::Init) => HsState::Received1,
+            (true,  HsState::Sent1) => HsState::Received2,
+            (false, HsState::Sent2) => HsState::Complete,
+            (true,  HsState::Sent3) => HsState::Complete,
+            _ => self.state,
+        };
+
         Ok(())
     }
 
