@@ -19,17 +19,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut buf = [0u8; 2048];
 
-    // 1️⃣ Получаем первый пакет клиента
+    // 1️⃣ Получаем msg1 от клиента
     let (n, peer) = socket.recv_from(&mut buf)?;
     hs.process_inbound(&buf[..n])?;
 
-    // 2️⃣ Генерируем ответ — КРУТИМСЯ, пока он реально появится
+    // 2️⃣ Отправляем msg2
     let len = loop {
         let out = hs.next_outbound(&mut buf)?;
         if out > 0 { break out; }
     };
-
     socket.send_to(&buf[..len], peer)?;
+
+    // 3️⃣ Получаем msg3
+    let (n, _) = socket.recv_from(&mut buf)?;
+    hs.process_inbound(&buf[..n])?;
 
     println!("Handshake complete with {}", peer);
 
