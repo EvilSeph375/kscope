@@ -4,77 +4,61 @@ use kscope::net::tun::create_tun;
 
 use std::net::UdpSocket;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 fn main() -> Result<(), Box<dyn Error>> {
 
-    let tun = Arc::new(create_tun("kscope0")?);
+    // --- Create TUN first ---
+    let tun = create_tun("kscope0")?;
     println!("TUN interface kscope0 created");
 
-    let socket = UdpSocket::bind("0.0.0.0:9000")?;
-    println!("Server listening on 0.0.0.0:9000");
+    let addr = "0.0.0.0:9000";
+    let socket = UdpSocket::bind(addr)?;
+    println!("Server listening on {}", addr);
+    println!("Waiting for client handshake...");
 
     let server_static = [2u8; 32];
     let client_static = [1u8; 32];
     let psk = [9u8; 32];
 
     let mut buf = [0u8; 2048];
-    let (len, peer) = socket.recv_from(&mut buf)?;
+    let mut peer = None;
 
-    let mut handshake = Handshake::new_responder(&server_static, &client_static, &psk)?;
-    handshake.process_inbound(&buf[..len])?;
+    let mut handshake = Handshake::new_responder(
+        &server_static,
+        &client_static,
+        &psk
+    )?;
 
-    let out = handshake.next_outbound(&mut buf)?;
-    socket.send_to(&buf[..out], peer)?;
+    // ===== Handshake =====
+    while !handshake.is_complete() {
+        let (len, p) = socket.recv_from(&mut buf)?;
+        peer = Some(p);
 
-    let (len, _) = socket.recv_from(&mut buf)?;
-    handshake.process_inbound(&buf[..len])?;
+        handshake.process_inbound(&buf[..len])?;
 
-    let session = handshake.into_session();
-    let transport = Arc::new(Mutex::new(SecureTransport::new(session)));
+        if !handshake.is_complete() {
+            let out_len = handshake.next_outbound(&mut buf)?;
+            socket.send_to(&buf[..out_len], p)?;
+        }
+    }
 
     println!("Secure tunnel established.");
 
-    let udp = Arc::new(socket);
+    let peer = peer.unwrap();
+    let session = handshake.into_session();
+    let mut transport = SecureTransport::new(session);
 
-    // === Thread A: TUN → UDP ===
-    {
-        let tun = tun.clone();
-        let udp = udp.clone();
-        let transport = transport.clone();
+    let mut tun_buf = [0u8; 1500];
+    let mut net_buf = [0u8; 2048];
 
-        thread::spawn(move || {
-            let mut tun_buf = [0u8; 1500];
-            let mut net_buf = [0u8; 2048];
+    // ===== VPN bridge =====
+    loop {
+        let ip_len = tun.recv(&mut tun_buf)?;
+        let enc_len = transport.encrypt_frame(&tun_buf[..ip_len], &mut net_buf)?;
+        socket.send_to(&net_buf[..enc_len], peer)?;
 
-            loop {
-                let len = tun.recv(&mut tun_buf).unwrap();
-                let enc = transport.lock().unwrap()
-                    .encrypt_frame(&tun_buf[..len], &mut net_buf).unwrap();
-                udp.send_to(&net_buf[..enc], peer).unwrap();
-            }
-        });
+        let (recv_len, _) = socket.recv_from(&mut net_buf)?;
+        let dec_len = transport.decrypt_frame(&net_buf[..recv_len], &mut tun_buf)?;
+        tun.send(&tun_buf[..dec_len])?;
     }
-
-    // === Thread B: UDP → TUN ===
-    {
-        let tun = tun.clone();
-        let udp = udp.clone();
-        let transport = transport.clone();
-
-        thread::spawn(move || {
-            let mut net_buf = [0u8; 2048];
-            let mut tun_buf = [0u8; 1500];
-
-            loop {
-                let (len, _) = udp.recv_from(&mut net_buf).unwrap();
-                let dec = transport.lock().unwrap()
-                    .decrypt_frame(&net_buf[..len], &mut tun_buf).unwrap();
-                tun.send(&tun_buf[..dec]).unwrap();
-            }
-        });
-    }
-
-    loop { thread::park(); }
 }
