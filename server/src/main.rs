@@ -1,38 +1,81 @@
 use kscope::protocol::handshake::Handshake;
 use kscope::protocol::transport::SecureTransport;
-use kscope::tun::device::{TunDevice, TunConfig};
-use std::net::UdpSocket;
-use std::error::Error;
+use kscope::net::tun::create_tun;
 
-fn main() -> Result<(), Box<dyn Error>> {
+use std::net::{UdpSocket, SocketAddr};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::sync::mpsc;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket = UdpSocket::bind("0.0.0.0:9000")?;
+    let tun = create_tun("kscope0")?;
 
     println!("Server listening on 0.0.0.0:9000");
     println!("Waiting for client handshake...");
 
-    let static_private = [2u8; 32];
-    let remote_static  = [1u8; 32];
-    let psk = [3u8; 32];
+    let static_priv = [2u8; 32];
+    let static_pub  = [1u8; 32];
+    let psk         = [9u8; 32];
 
-    let mut buf = [0u8; 1024];
-    let (n, peer) = socket.recv_from(&mut buf)?;
+    let mut hs = Handshake::new_responder(&static_priv, &static_pub, &psk)?;
 
-    let mut hs = Handshake::new_responder(&static_private, &remote_static, &psk)?;
-    hs.process_inbound(&buf[..n])?;
-
-    let mut out = [0u8; 1024];
-    let n = hs.next_outbound(&mut out)?;
-    socket.send_to(&out[..n], peer)?;
-
-    let noise = hs.into_session();
-    let mut transport = SecureTransport::new(noise);
-
-    println!("Handshake completed with {}", peer);
-
-    let tun = TunDevice::create(TunConfig::default())?;
-    println!("VPN is up");
+    let mut buf = [0u8; 2048];
+    let peer: SocketAddr;
 
     loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        let (n, addr) = socket.recv_from(&mut buf)?;
+        hs.process_inbound(&buf[..n])?;
+
+        let len = hs.next_outbound(&mut buf)?;
+        if len > 0 {
+            socket.send_to(&buf[..len], addr)?;
+        }
+
+        if hs.is_complete() {
+            peer = addr;
+            break;
+        }
+    }
+
+    println!("Handshake complete with {}", peer);
+
+    let transport = Arc::new(Mutex::new(SecureTransport::new(hs.into_session())));
+    let socket = Arc::new(socket);
+
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+
+    // UDP -> TUN
+    {
+        let transport = transport.clone();
+        let socket = socket.clone();
+
+        thread::spawn(move || {
+            let mut net_buf = [0u8; 2000];
+            let mut plain_buf = [0u8; 2000];
+
+            loop {
+                let (n, _) = socket.recv_from(&mut net_buf).unwrap();
+                let dec = transport.lock().unwrap()
+                    .decrypt_frame(&net_buf[..n], &mut plain_buf).unwrap();
+                tx.send(plain_buf[..dec].to_vec()).unwrap();
+            }
+        });
+    }
+
+    // TUN -> UDP (основной поток)
+    let mut tun = tun;
+    let mut tun_buf = [0u8; 2000];
+    let mut crypt_buf = [0u8; 2000];
+
+    loop {
+        if let Ok(packet) = rx.try_recv() {
+            tun.send(&packet)?;
+        }
+
+        let n = tun.recv(&mut tun_buf)?;
+        let enc = transport.lock().unwrap()
+            .encrypt_frame(&tun_buf[..n], &mut crypt_buf)?;
+        socket.send_to(&crypt_buf[..enc], peer)?;
     }
 }
