@@ -1,8 +1,6 @@
 use crate::crypto::noise::NoiseSession;
 use std::error::Error;
 
-const MAX_PACKET: usize = 1500;
-
 pub struct SecureTransport {
     noise: NoiseSession,
 }
@@ -12,21 +10,11 @@ impl SecureTransport {
         Self { noise }
     }
 
-    pub fn encrypt_frame(
-        &mut self,
-        payload: &[u8],
-        out: &mut [u8],
-    ) -> Result<usize, Box<dyn Error>> {
-        let len = self.noise.encrypt(payload, out)?;
-        Ok(len)
+    pub fn encrypt(&mut self, plain: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+        Ok(self.noise.encrypt(plain, out)?)
     }
 
-    pub fn decrypt_frame(
-        &mut self,
-        input: &[u8],
-        out: &mut [u8],
-    ) -> Result<usize, Box<dyn Error>> {
-        let len = self.noise.decrypt(input, out)?;
-        Ok(len)
+    pub fn decrypt(&mut self, cipher: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+        Ok(self.noise.decrypt(cipher, out)?)
     }
 }
