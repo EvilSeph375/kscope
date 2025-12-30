@@ -3,8 +3,6 @@ use kscope::net::tun::create_tun;
 use kscope::crypto::keyfile::load_keys;
 use std::net::UdpSocket;
 use std::error::Error;
-use kscope::protocol::transport::SecureTransport;
-use std::thread;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let _tun = create_tun("kscope0")?;
@@ -42,30 +40,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     socket.send(&buf[..len])?;
 
     println!("Handshake complete.");
-let mut transport = SecureTransport::new(hs.into_session());
+    println!("Now configure interface on BOTH machines:");
+    println!("Server: sudo ip link set kscope0 up && sudo ip addr add 10.0.0.1/24 dev kscope0");
+    println!("Client: sudo ip link set kscope0 up && sudo ip addr add 10.0.0.2/24 dev kscope0");
 
-let tun_fd = _tun.as_raw_fd();
-let udp = socket.try_clone()?;
-
-thread::spawn(move || {
-    let mut tun_buf = [0u8; 2000];
-    let mut out = [0u8; 2048];
-
-    loop {
-        let n = nix::unistd::read(tun_fd, &mut tun_buf).unwrap();
-        let len = transport.encrypt(&tun_buf[..n], &mut out).unwrap();
-        udp.send(&out[..len]).unwrap();
-    }
-});
-
-let mut in_buf = [0u8; 2048];
-let mut plain = [0u8; 2000];
-
-loop {
-    let n = socket.recv(&mut in_buf)?;
-    let len = transport.decrypt(&in_buf[..n], &mut plain)?;
-    nix::unistd::write(tun_fd, &plain[..len]).unwrap();
-}
-
-    Ok(())
+    std::thread::park();
+Ok(())
 }

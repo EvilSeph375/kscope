@@ -18,3 +18,4 @@ impl SecureTransport {
         Ok(self.noise.decrypt(cipher, out)?)
     }
 }
+

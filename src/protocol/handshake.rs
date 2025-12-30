@@ -45,27 +45,21 @@ impl Handshake {
 
     pub fn next_outbound(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
         match (self.is_initiator, self.state) {
-            // Client: msg1
             (true, HsState::Init) => {
                 let n = self.session.write_handshake(out)?;
                 self.state = HsState::Sent1;
                 Ok(n)
             }
-
-            // Server: msg2
             (false, HsState::Received1) => {
                 let n = self.session.write_handshake(out)?;
                 self.state = HsState::Sent2;
                 Ok(n)
             }
-
-            // Client: msg3
             (true, HsState::Received2) => {
                 let n = self.session.write_handshake(out)?;
                 self.state = HsState::Sent3;
                 Ok(n)
             }
-
             _ => Ok(0),
         }
     }
@@ -75,26 +69,14 @@ impl Handshake {
         self.session.read_handshake(input, &mut tmp)?;
 
         self.state = match (self.is_initiator, self.state) {
-            // Server receives msg1
             (false, HsState::Init) => HsState::Received1,
-
-            // Client receives msg2
             (true, HsState::Sent1) => HsState::Received2,
-
-            // Server receives msg3
             (false, HsState::Sent2) => HsState::Complete,
-
-            // Client after sending msg3
             (true, HsState::Sent3) => HsState::Complete,
-
             _ => self.state,
         };
 
         Ok(())
-    }
-
-    pub fn is_complete(&self) -> bool {
-        self.state == HsState::Complete
     }
 
     pub fn into_session(self) -> NoiseSession {
