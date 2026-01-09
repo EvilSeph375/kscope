@@ -33,12 +33,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sock.send_to(&buf[..n], server)?;
 
     while !hs.is_complete() {
-        let (n, _) = sock.recv_from(&mut buf)?;
-        hs.process_inbound(&buf[..n])?;
+        match sock.recv_from(&mut buf) {
+            Ok((n, _)) => {
+                hs.process_inbound(&buf[..n])?;
 
-        let n = hs.next_outbound(&mut buf)?;
-        if n > 0 {
-            sock.send_to(&buf[..n], server)?;
+                let n = hs.next_outbound(&mut buf)?;
+                if n > 0 {
+                    sock.send_to(&buf[..n], server)?;
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
         }
     }
 
@@ -62,13 +67,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // UDP → TUN
-        if let Ok((n, _)) = sock.recv_from(&mut buf) {
-            let (pkt, _) = Packet::deserialize(&buf[..n])?;
-            if let Packet::TransportData(td) = pkt {
-                let mut plain = vec![0u8; td.ciphertext.len()];
-                let len = transport.decrypt(&td.ciphertext, &mut plain)?;
-                tun.write(&plain[..len])?;
+        match sock.recv_from(&mut buf) {
+            Ok((n, _)) => {
+                let (pkt, _) = Packet::deserialize(&buf[..n])?;
+                if let Packet::TransportData(td) = pkt {
+                    let mut plain = vec![0u8; td.ciphertext.len()];
+                    let len = transport.decrypt(&td.ciphertext, &mut plain)?;
+                    tun.write(&plain[..len])?;
+                }
             }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
         }
     }
 }

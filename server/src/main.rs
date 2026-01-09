@@ -30,15 +30,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut buf = [0u8; 2048];
 
-    // === Handshake ===
+    // ===== Handshake =====
     while !hs.is_complete() {
-        let (n, addr) = sock.recv_from(&mut buf)?;
-        peer = Some(addr);
+        match sock.recv_from(&mut buf) {
+            Ok((n, addr)) => {
+                peer = Some(addr);
+                hs.process_inbound(&buf[..n])?;
 
-        hs.process_inbound(&buf[..n])?;
-        let n = hs.next_outbound(&mut buf)?;
-        if n > 0 {
-            sock.send_to(&buf[..n], addr)?;
+                let n = hs.next_outbound(&mut buf)?;
+                if n > 0 {
+                    sock.send_to(&buf[..n], addr)?;
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
         }
     }
 
@@ -46,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut transport = SecureTransport::new(hs.into_session());
 
-    // === Data loop ===
+    // ===== Data loop =====
     loop {
         // TUN → UDP
         if let Ok(packet) = tun.read() {
@@ -63,13 +68,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // UDP → TUN
-        if let Ok((n, _)) = sock.recv_from(&mut buf) {
-            let (pkt, _) = Packet::deserialize(&buf[..n])?;
-            if let Packet::TransportData(td) = pkt {
-                let mut plain = vec![0u8; td.ciphertext.len()];
-                let len = transport.decrypt(&td.ciphertext, &mut plain)?;
-                tun.write(&plain[..len])?;
+        match sock.recv_from(&mut buf) {
+            Ok((n, _)) => {
+                let (pkt, _) = Packet::deserialize(&buf[..n])?;
+                if let Packet::TransportData(td) = pkt {
+                    let mut plain = vec![0u8; td.ciphertext.len()];
+                    let len = transport.decrypt(&td.ciphertext, &mut plain)?;
+                    tun.write(&plain[..len])?;
+                }
             }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
         }
     }
 }
