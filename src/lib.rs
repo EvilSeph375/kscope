@@ -1,22 +1,28 @@
 pub mod crypto;
 pub mod protocol;
-pub mod net;   // ← ВОТ ЭТО ОБЯЗАТЕЛЬНО
+pub mod tun;
 
 use std::fmt;
 
 #[derive(Debug)]
 pub enum KScopeError {
-    Protocol(String),
-    Crypto(String),
     Io(String),
+    Protocol(String),
+    Config(String),
+}
+
+impl From<std::io::Error> for KScopeError {
+    fn from(e: std::io::Error) -> Self {
+        KScopeError::Io(e.to_string())
+    }
 }
 
 impl fmt::Display for KScopeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            KScopeError::Protocol(s) => write!(f, "Protocol error: {}", s),
-            KScopeError::Crypto(s) => write!(f, "Crypto error: {}", s),
             KScopeError::Io(s) => write!(f, "IO error: {}", s),
+            KScopeError::Protocol(s) => write!(f, "Protocol error: {}", s),
+            KScopeError::Config(s) => write!(f, "Config error: {}", s),
         }
     }
 }

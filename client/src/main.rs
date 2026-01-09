@@ -1,49 +1,58 @@
-use kscope::protocol::handshake::Handshake;
-use kscope::net::tun::create_tun;
 use kscope::crypto::keyfile::load_keys;
-use std::net::UdpSocket;
-use std::error::Error;
+use kscope::protocol::{
+    handshake::Handshake,
+    packet::{Packet, TransportData},
+    transport::SecureTransport,
+};
+use kscope::tun::{TunConfig, TunDevice};
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let _tun = create_tun("kscope0")?;
-    println!("Client TUN created");
-
-    let server = "192.168.38.127:9000";
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    socket.connect(server)?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
 
     let keys = load_keys("keys/client.keys");
 
-    let mut hs = Handshake::new_initiator(
-        &keys.private,
-        &keys.peer_public,
-        &keys.psk,
-    )?;
+    let mut tun = TunDevice::create(TunConfig {
+        name: "kscope0".into(),
+        ip: "10.8.0.2".parse()?,
+        prefix_len: 24,
+        mtu: 1400,
+    })?;
 
-    println!("Starting handshake...");
+    let server = "192.168.137.128:7000";
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0")?;
+
+    let mut hs = Handshake::new_initiator(&keys.private, &keys.peer_public, &keys.psk)?;
 
     let mut buf = [0u8; 2048];
 
-    let len = loop {
+    // === Handshake ===
+    let n = hs.next_outbound(&mut buf)?;
+    sock.send_to(&buf[..n], server)?;
+
+    while !hs.is_complete() {
+        let (n, _) = sock.recv_from(&mut buf)?;
+        hs.process_inbound(&buf[..n])?;
+
         let n = hs.next_outbound(&mut buf)?;
-        if n > 0 { break n; }
-    };
-    socket.send(&buf[..len])?;
+        if n > 0 {
+            sock.send_to(&buf[..n], server)?;
+        }
+    }
 
-    let n = socket.recv(&mut buf)?;
-    hs.process_inbound(&buf[..n])?;
+    let mut transport = SecureTransport::new(hs.into_session());
 
-    let len = loop {
-        let out = hs.next_outbound(&mut buf)?;
-        if out > 0 { break out; }
-    };
-    socket.send(&buf[..len])?;
+    println!("Client: handshake complete");
 
-    println!("Handshake complete.");
-    println!("Now configure interface on BOTH machines:");
-    println!("Server: sudo ip link set kscope0 up && sudo ip addr add 10.0.0.1/24 dev kscope0");
-    println!("Client: sudo ip link set kscope0 up && sudo ip addr add 10.0.0.2/24 dev kscope0");
+    // === Data loop ===
+    loop {
+        let (n, _) = sock.recv_from(&mut buf)?;
+        let (pkt, _) = Packet::deserialize(&buf[..n])?;
 
-    std::thread::park();
-Ok(())
+        if let Packet::TransportData(TransportData { nonce: _, ciphertext }) = pkt {
+            let mut plain = vec![0u8; ciphertext.len()];
+            let len = transport.decrypt(&ciphertext, &mut plain)?;
+
+            tun.write(&plain[..len])?;
+        }
+    }
 }

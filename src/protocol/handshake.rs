@@ -44,24 +44,22 @@ impl Handshake {
     }
 
     pub fn next_outbound(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        match (self.is_initiator, self.state) {
+        let n = match (self.is_initiator, self.state) {
             (true, HsState::Init) => {
-                let n = self.session.write_handshake(out)?;
                 self.state = HsState::Sent1;
-                Ok(n)
+                self.session.write_handshake(out)?
             }
             (false, HsState::Received1) => {
-                let n = self.session.write_handshake(out)?;
                 self.state = HsState::Sent2;
-                Ok(n)
+                self.session.write_handshake(out)?
             }
             (true, HsState::Received2) => {
-                let n = self.session.write_handshake(out)?;
                 self.state = HsState::Sent3;
-                Ok(n)
+                self.session.write_handshake(out)?
             }
-            _ => Ok(0),
-        }
+            _ => 0,
+        };
+        Ok(n)
     }
 
     pub fn process_inbound(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -79,7 +77,12 @@ impl Handshake {
         Ok(())
     }
 
+    pub fn is_complete(&self) -> bool {
+        matches!(self.state, HsState::Complete)
+    }
+
     pub fn into_session(self) -> NoiseSession {
         self.session
     }
 }
+
