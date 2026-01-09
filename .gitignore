@@ -18,3 +18,4 @@ config/*.toml  # если это примеры
 !config/client.toml.example
 !config/server.toml.example
 keys/*.keys
+keys/*.key
