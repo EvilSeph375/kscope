@@ -1,11 +1,10 @@
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{UdpSocket, SocketAddr};
 use bytes::Bytes;
 use kscope::crypto::keyfile::load_keys;
 use kscope::protocol::{handshake::Handshake, packet::{Packet, TransportData}, transport::SecureTransport};
 use kscope::tun::{TunConfig, TunDevice};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
     let keys = load_keys("keys/server.keys");
 
     let mut tun = TunDevice::create(TunConfig {
@@ -16,9 +15,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let sock = UdpSocket::bind("0.0.0.0:7000")?;
-    sock.set_nonblocking(false)?;
-
     let mut hs = Handshake::new_responder(&keys.private, &keys.peer_public, &keys.psk)?;
+
     let mut buf = [0u8; 2048];
     let mut peer: SocketAddr;
 
@@ -26,16 +24,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (n, addr) = sock.recv_from(&mut buf)?;
         peer = addr;
 
-        hs.process_inbound(&buf[..n])?;
+        let (pkt, _) = Packet::deserialize(&buf[..n])?;
+        hs.process_inbound(pkt)?;
 
-        let out_len = hs.next_outbound(&mut buf)?;
-        if out_len > 0 {
-            sock.send_to(&buf[..out_len], peer)?;
+        if let Some(reply) = hs.next_outbound()? {
+            sock.send_to(&reply.serialize(0), peer)?;
         }
 
-        if hs.is_complete() {
-            break;
-        }
+        if hs.is_complete() { break; }
     }
 
     println!("Server: handshake complete");
@@ -43,16 +39,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut transport = SecureTransport::new(hs.into_session());
 
     loop {
-        let packet = tun.read()?;
-        let mut encrypted = vec![0u8; packet.len() + 64];
-        let len = transport.encrypt(&packet, &mut encrypted)?;
+        let data = tun.read()?;
+        let mut encrypted = vec![0u8; data.len() + 64];
+        let len = transport.encrypt(&data, &mut encrypted)?;
 
         let pkt = Packet::TransportData(TransportData {
             nonce: 0,
             ciphertext: Bytes::copy_from_slice(&encrypted[..len]),
         });
 
-        let out = pkt.serialize(0);
-        sock.send_to(&out, peer)?;
+        sock.send_to(&pkt.serialize(0), peer)?;
     }
 }
