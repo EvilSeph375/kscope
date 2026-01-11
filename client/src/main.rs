@@ -24,7 +24,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut hs = Handshake::new_initiator(&keys.private, &keys.peer_public, &keys.psk)?;
     let mut buf = [0u8; 2048];
 
-    // 👉 первый пакет handshake
     let n = hs.next_outbound(&mut buf)?;
     sock.send_to(&buf[..n], server)?;
 

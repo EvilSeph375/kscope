@@ -3,7 +3,6 @@ use std::error::Error;
 
 const NOISE_PARAMS: &str = "Noise_XXpsk2_25519_ChaChaPoly_BLAKE2s";
 
-
 pub struct NoiseSession {
     handshake: Option<HandshakeState>,
     transport: Option<TransportState>,
@@ -43,10 +42,11 @@ impl NoiseSession {
     }
 
     fn finish_if_complete(&mut self) -> Result<(), Box<dyn Error>> {
-        if let Some(hs) = self.handshake.as_ref() {
+        if let Some(hs) = self.handshake.take() {
             if hs.is_handshake_finished() {
-                let hs = self.handshake.take().unwrap();
                 self.transport = Some(hs.into_transport_mode()?);
+            } else {
+                self.handshake = Some(hs);
             }
         }
         Ok(())

@@ -22,17 +22,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut hs = Handshake::new_responder(&keys.private, &keys.peer_public, &keys.psk)?;
     let mut buf = [0u8; 2048];
 
-    let mut peer: SocketAddr;
+    let mut peer: Option<SocketAddr> = None;
 
     loop {
         let (n, addr) = sock.recv_from(&mut buf)?;
-        peer = addr;
+        peer = Some(addr);
 
         hs.process_inbound(&buf[..n])?;
 
         let out = hs.next_outbound(&mut buf)?;
         if out > 0 {
-            sock.send_to(&buf[..out], peer)?;
+            sock.send_to(&buf[..out], peer.unwrap())?;
         }
 
         if hs.is_complete() {
@@ -56,6 +56,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         let out = pkt.serialize(0);
-        sock.send_to(&out, peer)?;
+        sock.send_to(&out, peer.unwrap())?;
     }
 }
