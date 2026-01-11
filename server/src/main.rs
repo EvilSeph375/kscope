@@ -24,15 +24,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut peer: Option<SocketAddr> = None;
 
+    // 🧷 правильный XX handshake
     loop {
         let (n, addr) = sock.recv_from(&mut buf)?;
         peer = Some(addr);
 
         hs.process_inbound(&buf[..n])?;
 
-        let out = hs.next_outbound(&mut buf)?;
-        if out > 0 {
-            sock.send_to(&buf[..out], peer.unwrap())?;
+        if !hs.is_complete() {
+            let out = hs.next_outbound(&mut buf)?;
+            if out > 0 {
+                sock.send_to(&buf[..out], peer.unwrap())?;
+            }
         }
 
         if hs.is_complete() {

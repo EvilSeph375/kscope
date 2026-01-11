@@ -14,15 +14,16 @@ impl NoiseSession {
         remote_static: &[u8],
         psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
-        let builder = Builder::new(NOISE_PARAMS.parse()?);
-
-        let handshake = builder
+        let handshake = Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(static_private)
             .remote_public_key(remote_static)
             .psk(2, psk)
             .build_initiator()?;
 
-        Ok(Self { handshake: Some(handshake), transport: None })
+        Ok(Self {
+            handshake: Some(handshake),
+            transport: None,
+        })
     }
 
     pub fn new_responder(
@@ -30,42 +31,43 @@ impl NoiseSession {
         remote_static: &[u8],
         psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
-        let builder = Builder::new(NOISE_PARAMS.parse()?);
-
-        let handshake = builder
+        let handshake = Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(static_private)
             .remote_public_key(remote_static)
             .psk(2, psk)
             .build_responder()?;
 
-        Ok(Self { handshake: Some(handshake), transport: None })
+        Ok(Self {
+            handshake: Some(handshake),
+            transport: None,
+        })
     }
 
     fn finish_if_complete(&mut self) -> Result<(), Box<dyn Error>> {
-        if let Some(hs) = self.handshake.take() {
+        if let Some(hs) = self.handshake.as_ref() {
             if hs.is_handshake_finished() {
+                let hs = self.handshake.take().unwrap();
                 self.transport = Some(hs.into_transport_mode()?);
-            } else {
-                self.handshake = Some(hs);
             }
         }
         Ok(())
     }
 
     pub fn write_handshake(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        let len = self.handshake.as_mut().unwrap().write_message(&[], out)?;
+        let n = self.handshake.as_mut().unwrap().write_message(&[], out)?;
         self.finish_if_complete()?;
-        Ok(len)
+        Ok(n)
     }
 
-    pub fn read_handshake(&mut self, input: &[u8], out: &mut [u8]) -> Result<(), Box<dyn Error>> {
-        self.handshake.as_mut().unwrap().read_message(input, out)?;
+    pub fn read_handshake(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
+        let mut tmp = [0u8; 1024];
+        self.handshake.as_mut().unwrap().read_message(input, &mut tmp)?;
         self.finish_if_complete()?;
         Ok(())
     }
 
-    pub fn encrypt(&mut self, plaintext: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        Ok(self.transport.as_mut().unwrap().write_message(plaintext, out)?)
+    pub fn encrypt(&mut self, plain: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+        Ok(self.transport.as_mut().unwrap().write_message(plain, out)?)
     }
 
     pub fn decrypt(&mut self, input: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
