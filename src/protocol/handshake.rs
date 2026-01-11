@@ -1,79 +1,56 @@
 use crate::crypto::noise::NoiseSession;
-use crate::protocol::packet::{Packet, HandshakeInit, HandshakeResponse};
 use std::error::Error;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HsState {
-    Init,
-    Sent1,
-    Received1,
-    Sent2,
-    Complete,
-}
 
 pub struct Handshake {
     session: NoiseSession,
     is_initiator: bool,
-    state: HsState,
+    complete: bool,
 }
 
 impl Handshake {
-    pub fn new_initiator(static_private: &[u8], remote_static: &[u8], psk: &[u8]) -> Result<Self, Box<dyn Error>> {
+    pub fn new_initiator(privk: &[u8], pubk: &[u8], psk: &[u8]) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            session: NoiseSession::new_initiator(static_private, remote_static, psk)?,
+            session: NoiseSession::new_initiator(privk, pubk, psk)?,
             is_initiator: true,
-            state: HsState::Init,
+            complete: false,
         })
     }
 
-    pub fn new_responder(static_private: &[u8], remote_static: &[u8], psk: &[u8]) -> Result<Self, Box<dyn Error>> {
+    pub fn new_responder(privk: &[u8], pubk: &[u8], psk: &[u8]) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            session: NoiseSession::new_responder(static_private, remote_static, psk)?,
+            session: NoiseSession::new_responder(privk, pubk, psk)?,
             is_initiator: false,
-            state: HsState::Init,
+            complete: false,
         })
     }
 
-    pub fn next_outbound(&mut self) -> Result<Option<Packet>, Box<dyn Error>> {
-        let mut buf = [0u8; 1024];
+    pub fn next_outbound(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+        if self.complete {
+            return Ok(0);
+        }
 
-        let pkt = match (self.is_initiator, self.state) {
-            (true, HsState::Init) => {
-                let n = self.session.write_handshake(&mut buf)?;
-                self.state = HsState::Sent1;
-                Some(Packet::HandshakeInit(HandshakeInit::deserialize(&buf[..n])?))
-            }
-            (false, HsState::Received1) => {
-                let n = self.session.write_handshake(&mut buf)?;
-                self.state = HsState::Sent2;
-                Some(Packet::HandshakeResponse(HandshakeResponse::deserialize(&buf[..n])?))
-            }
-            _ => None,
-        };
+        let n = self.session.write_handshake(out)?;
 
-        Ok(pkt)
+        if !self.is_initiator {
+            self.complete = true;
+        }
+
+        Ok(n)
     }
 
-    pub fn process_inbound(&mut self, pkt: Packet) -> Result<(), Box<dyn Error>> {
-        let mut out = [0u8; 1024];
+    pub fn process_inbound(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
+        let mut tmp = [0u8; 1024];
+        self.session.read_handshake(input, &mut tmp)?;
 
-        match pkt {
-            Packet::HandshakeInit(p) => {
-                self.session.read_handshake(&p.serialize(), &mut out)?;
-                self.state = HsState::Received1;
-            }
-            Packet::HandshakeResponse(p) => {
-                self.session.read_handshake(&p.serialize(), &mut out)?;
-                self.state = HsState::Complete;
-            }
-            _ => {}
+        if self.is_initiator {
+            self.complete = true;
         }
 
         Ok(())
     }
 
     pub fn is_complete(&self) -> bool {
-        self.state == HsState::Complete
+        self.complete
     }
 
     pub fn into_session(self) -> NoiseSession {
