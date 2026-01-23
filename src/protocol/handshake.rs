@@ -6,15 +6,22 @@ pub struct Handshake {
 }
 
 impl Handshake {
-    pub fn new_initiator(privk: &[u8], pubk: &[u8], psk: &[u8]) -> Result<Self, Box<dyn Error>> {
+    pub fn new_initiator(
+        privk: &[u8],
+        pubk: &[u8],
+        psk: &[u8],
+    ) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             session: NoiseSession::new_initiator(privk, pubk, psk)?,
         })
     }
 
-    pub fn new_responder(privk: &[u8], pubk: &[u8], psk: &[u8]) -> Result<Self, Box<dyn Error>> {
+    pub fn new_responder(
+        privk: &[u8],
+        psk: &[u8],
+    ) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            session: NoiseSession::new_responder(privk, pubk, psk)?,
+            session: NoiseSession::new_responder(privk, psk)?,
         })
     }
 

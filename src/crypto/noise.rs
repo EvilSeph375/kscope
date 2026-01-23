@@ -1,7 +1,7 @@
 use snow::{Builder, HandshakeState, TransportState};
 use std::error::Error;
 
-const NOISE_PARAMS: &str = "Noise_XXpsk2_25519_ChaChaPoly_BLAKE2s";
+const NOISE_PARAMS: &str = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
 
 pub struct NoiseSession {
     handshake: Option<HandshakeState>,
@@ -28,12 +28,10 @@ impl NoiseSession {
 
     pub fn new_responder(
         static_private: &[u8],
-        remote_static: &[u8],
         psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
         let handshake = Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(static_private)
-            .remote_public_key(remote_static)
             .psk(2, psk)
             .build_responder()?;
 
@@ -54,14 +52,20 @@ impl NoiseSession {
     }
 
     pub fn write_handshake(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        let n = self.handshake.as_mut().unwrap().write_message(&[], out)?;
+        let n = self.handshake
+            .as_mut()
+            .unwrap()
+            .write_message(&[], out)?;
         self.finish_if_complete()?;
         Ok(n)
     }
 
     pub fn read_handshake(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
         let mut tmp = [0u8; 1024];
-        self.handshake.as_mut().unwrap().read_message(input, &mut tmp)?;
+        self.handshake
+            .as_mut()
+            .unwrap()
+            .read_message(input, &mut tmp)?;
         self.finish_if_complete()?;
         Ok(())
     }

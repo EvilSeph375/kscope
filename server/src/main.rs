@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let sock = UdpSocket::bind("0.0.0.0:7000")?;
-    let mut hs = Handshake::new_responder(&keys.private, &keys.peer_public, &keys.psk)?;
+    let mut hs = Handshake::new_responder(&keys.private, &keys.psk)?;
+
     let mut buf = [0u8; 2048];
 
     let mut peer: Option<SocketAddr> = None;
