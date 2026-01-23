@@ -22,13 +22,11 @@ impl Handshake {
         if self.session.is_ready() {
             return Ok(0);
         }
-        Ok(self.session.write_handshake(out)?)
+        self.session.write_handshake(out)
     }
 
     pub fn process_inbound(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
-        let mut tmp = [0u8; 1024];
-        self.session.read_handshake(input, &mut tmp)?;
-        Ok(())
+        self.session.read_handshake(input)
     }
 
     pub fn is_complete(&self) -> bool {
