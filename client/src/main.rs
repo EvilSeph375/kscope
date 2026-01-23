@@ -1,3 +1,8 @@
+use std::net::UdpSocket;
+
+use kscope::crypto::keyfile::load_keys;
+use kscope::protocol::handshake::Handshake;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
@@ -5,7 +10,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sock = UdpSocket::bind("0.0.0.0:0")?;
     let server = "192.168.38.127:7000";
 
-    let mut hs = Handshake::new_initiator(&keys.private, &keys.peer_public, &keys.psk)?;
+    let mut hs =
+        Handshake::new_initiator(&keys.private, &keys.peer_public, &keys.psk)?;
     let mut buf = [0u8; 2048];
 
     let n = hs.next_outbound(&mut buf)?;
