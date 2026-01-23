@@ -14,6 +14,8 @@ impl NoiseSession {
         remote_static: &[u8],
         psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
+        log::info!("Noise: creating IK initiator");
+
         let handshake = Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(static_private)
             .remote_public_key(remote_static)
@@ -30,6 +32,8 @@ impl NoiseSession {
         static_private: &[u8],
         psk: &[u8],
     ) -> Result<Self, Box<dyn Error>> {
+        log::info!("Noise: creating IK responder");
+
         let handshake = Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(static_private)
             .psk(2, psk)
@@ -44,6 +48,7 @@ impl NoiseSession {
     fn finish_if_complete(&mut self) -> Result<(), Box<dyn Error>> {
         if let Some(hs) = self.handshake.as_ref() {
             if hs.is_handshake_finished() {
+                log::info!("Noise: handshake finished, switching to transport mode");
                 let hs = self.handshake.take().unwrap();
                 self.transport = Some(hs.into_transport_mode()?);
             }
@@ -52,30 +57,45 @@ impl NoiseSession {
     }
 
     pub fn write_handshake(&mut self, out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        let n = self.handshake
+        let n = self
+            .handshake
             .as_mut()
             .unwrap()
             .write_message(&[], out)?;
+
+        log::debug!("Noise: write_handshake {} bytes", n);
+
         self.finish_if_complete()?;
         Ok(n)
     }
 
     pub fn read_handshake(&mut self, input: &[u8]) -> Result<(), Box<dyn Error>> {
+        log::debug!("Noise: read_handshake {} bytes", input.len());
+
         let mut tmp = [0u8; 1024];
         self.handshake
             .as_mut()
             .unwrap()
             .read_message(input, &mut tmp)?;
+
         self.finish_if_complete()?;
         Ok(())
     }
 
     pub fn encrypt(&mut self, plain: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        Ok(self.transport.as_mut().unwrap().write_message(plain, out)?)
+        Ok(self
+            .transport
+            .as_mut()
+            .unwrap()
+            .write_message(plain, out)?)
     }
 
     pub fn decrypt(&mut self, input: &[u8], out: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        Ok(self.transport.as_mut().unwrap().read_message(input, out)?)
+        Ok(self
+            .transport
+            .as_mut()
+            .unwrap()
+            .read_message(input, out)?)
     }
 
     pub fn is_ready(&self) -> bool {
